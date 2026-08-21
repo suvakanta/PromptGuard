@@ -74,7 +74,7 @@ export default function Home() {
   return (
     <main className="shell">
       <header className="topbar">
-        <a className="brand" href="#" aria-label="Sentinel home"><span className="brandMark">S</span><span>SENTINEL <i>AI</i></span></a>
+        <a className="brand" href="#" aria-label="PromptGuard home"><span className="brandMark">P</span><span>PROMPT<i>GUARD</i></span></a>
         <nav aria-label="Primary navigation"><a className="active" href="#scanner">Scanner</a><a href="#coverage">Coverage</a><a href="#about">About</a></nav>
         <div className="statusPill"><span /> Detection engine online</div>
       </header>
@@ -115,7 +115,7 @@ export default function Home() {
       </section>
 
       <section className="coverage" id="coverage"><div><span className="eyebrow">DEFENSE IN DEPTH</span><h2>One scanner. Every input surface.</h2></div><div className="coverageGrid">{[["Aa","Text & email","Direct, indirect, and encoded instructions"],["▧","Documents","PDF, DOCX, HTML, CSV, and archives"],["◫","Images","Visible text, metadata, and visual payloads"],["▶","Video & audio","Transcripts, captions, and frame-level prompts"]].map(item => <article key={item[1]}><span>{item[0]}</span><h3>{item[1]}</h3><p>{item[2]}</p></article>)}</div></section>
-      <footer id="about"><a className="brand" href="#"><span className="brandMark">S</span><span>SENTINEL <i>AI</i></span></a><p>Explainable prompt-injection detection for safer AI workflows.</p><span>Local demo • No uploads retained</span></footer>
+      <footer id="about"><a className="brand" href="#"><span className="brandMark">P</span><span>PROMPT<i>GUARD</i></span></a><p>Explainable prompt-injection detection for safer AI workflows.</p><span>Local demo • No uploads retained</span></footer>
     </main>
   );
 }

@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sentinel AI — Prompt Injection Detector",
+  title: "PromptGuard — AI Prompt Injection Detector",
   description: "Explainable multimodal prompt-injection detection for text, documents, email, images, audio, and video.",
   icons: {
     icon: "/favicon.svg",
