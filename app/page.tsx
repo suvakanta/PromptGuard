@@ -54,6 +54,14 @@ export default function Home() {
   const canScan = Boolean(text.trim() || (file && !/\.docx$/i.test(file.name))) && !extracting && !fileError;
   const fileKind = file?.type.startsWith("video/") ? "Video" : file?.type.startsWith("image/") ? "Image" : file?.type.includes("pdf") ? "Document" : file ? "File" : "";
 
+  function downloadReport() {
+    const report = { schema: "promptguard.report.v1", generatedAt: new Date().toISOString(), source: file ? { name: file.name, size: file.size, type: file.type || "unknown" } : { type: "pasted-text", characters: text.length }, verdict: score >= 70 ? "BLOCK" : score >= 30 ? "REVIEW" : "ALLOW", riskScore: score, findings };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url; link.download = `promptguard-report-${Date.now()}.json`; link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -66,7 +74,7 @@ export default function Home() {
         <div className="eyebrow"><span>◆</span> MULTIMODAL THREAT ANALYSIS</div>
         <h1>Detect the instruction<br />behind the <em>content.</em></h1>
         <p>Scan text, documents, images, video, and email for hidden instructions designed to manipulate AI systems.</p>
-        <div className="metricRow"><span><b>7</b> detection patterns</span><span><b>15+</b> file formats</span><span><b>&lt; 1s</b> local analysis</span></div>
+        <div className="metricRow"><span><b>10</b> detection patterns</span><span><b>15+</b> file formats</span><span><b>&lt; 1s</b> local analysis</span></div>
       </section>
 
       <section className="workspace">
@@ -92,7 +100,8 @@ export default function Home() {
           {scanned && <div className="report">
             <div className="scoreBlock"><div className={`scoreRing ${score >= 70 ? "red" : score >= 30 ? "amber" : "green"}`} style={{"--score": `${score * 3.6}deg`} as React.CSSProperties}><div><strong>{score}</strong><span>/100</span></div></div><div><small>INJECTION RISK</small><h3>{score >= 70 ? "Malicious instructions detected" : score >= 30 ? "Suspicious intent detected" : "No strong injection signals"}</h3><p>{findings.length ? `${findings.length} distinct attack pattern${findings.length > 1 ? "s" : ""} found.` : "Content appears safe under the current rule set."}</p></div></div>
             <div className="summaryGrid"><div><small>FINDINGS</small><strong>{findings.length}</strong></div><div><small>TOP CONFIDENCE</small><strong>{findings[0]?.confidence || 96}%</strong></div><div><small>ACTION</small><strong>{findings.length ? "Quarantine" : "Allow"}</strong></div></div>
-            <div className="findingList">{findings.length ? findings.map((finding, index) => <article className="finding" key={finding.title}><div className="findingTop"><span className={`severity ${finding.severity.toLowerCase()}`}>{finding.severity}</span><span>{finding.confidence}% confidence</span></div><h4>{String(index + 1).padStart(2, "0")} — {finding.title}</h4><blockquote>“{finding.snippet}”</blockquote><small>{finding.category}</small></article>) : <article className="cleanCard"><span>✓</span><div><h4>No actionable patterns found</h4><p>Continue to treat external content as untrusted and apply least-privilege controls.</p></div></article>}</div>
+            <div className="findingList">{findings.length ? findings.map((finding, index) => <article className="finding" key={finding.title}><div className="findingTop"><span className={`severity ${finding.severity.toLowerCase()}`}>{finding.severity}</span><span>{finding.confidence}% confidence</span></div><h4>{String(index + 1).padStart(2, "0")} — {finding.title}</h4><blockquote>“{finding.snippet}”</blockquote><small>{finding.category}</small><div className="remediation"><b>PROTECT</b><span>{finding.remediation}</span></div></article>) : <article className="cleanCard"><span>✓</span><div><h4>No actionable patterns found</h4><p>Continue to treat external content as untrusted and apply least-privilege controls.</p></div></article>}</div>
+            <button className="exportBtn" onClick={downloadReport}>↓ Export evidence report <span>JSON</span></button>
           </div>}
         </div>
       </section>
