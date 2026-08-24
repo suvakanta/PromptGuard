@@ -1,24 +1,28 @@
-export type Finding = { title: string; snippet: string; severity: "Critical" | "High" | "Medium" | "Low"; confidence: number; category: string };
+export type Finding = { title: string; snippet: string; severity: "Critical" | "High" | "Medium" | "Low"; confidence: number; category: string; remediation: string };
 
 const rules = [
-  { re: /ignore (all |any )?(previous|prior|above) instructions?/gi, title: "Instruction hierarchy override", severity: "Critical" as const, category: "Prompt override", confidence: 98 },
-  { re: /(reveal|show|print|repeat).{0,35}(system prompt|hidden instructions?|developer message)/gi, title: "System prompt extraction", severity: "Critical" as const, category: "Data exfiltration", confidence: 97 },
-  { re: /(send|forward|upload|transmit|post).{0,60}(external|@|http|webhook)/gi, title: "External data transfer", severity: "High" as const, category: "Exfiltration", confidence: 93 },
-  { re: /(do not mention|keep (this|it) secret|without telling|silently)/gi, title: "Output concealment", severity: "High" as const, category: "Evasion", confidence: 91 },
-  { re: /(base64|encode|decode|rot13|hex).{0,45}(data|content|message|salary|secret)/gi, title: "Encoded payload request", severity: "High" as const, category: "Obfuscation", confidence: 89 },
-  { re: /(act as|you are now|new role|switch roles?)/gi, title: "Role manipulation", severity: "Medium" as const, category: "Role hijacking", confidence: 78 },
-  { re: /(bypass|disable|override).{0,40}(safety|security|filter|policy|guardrail)/gi, title: "Safety bypass attempt", severity: "Critical" as const, category: "Policy bypass", confidence: 96 },
+  { re: /ignore (all |any )?(previous|prior|above) instructions?/gi, title: "Instruction hierarchy override", severity: "Critical" as const, category: "Prompt override", confidence: 98, remediation: "Remove the instruction and keep system policy immutable." },
+  { re: /(reveal|show|print|repeat).{0,35}(system prompt|hidden instructions?|developer message)/gi, title: "System prompt extraction", severity: "Critical" as const, category: "Data exfiltration", confidence: 97, remediation: "Block the request and prevent protected prompts from entering model output." },
+  { re: /(send|forward|upload|transmit|post).{0,60}(external|@|https?:|webhook)/gi, title: "External data transfer", severity: "High" as const, category: "Exfiltration", confidence: 93, remediation: "Deny unapproved destinations and require explicit user authorization." },
+  { re: /(do not mention|keep (this|it) secret|without telling|silently)/gi, title: "Output concealment", severity: "High" as const, category: "Evasion", confidence: 91, remediation: "Reject hidden side effects and surface the requested action to the user." },
+  { re: /(base64|encode|decode|rot13|hex).{0,45}(data|content|message|salary|secret|credential)/gi, title: "Encoded payload request", severity: "High" as const, category: "Obfuscation", confidence: 89, remediation: "Decode in an isolated scanner and re-apply policy before use." },
+  { re: /(act as|you are now|new role|switch roles?)/gi, title: "Role manipulation", severity: "Medium" as const, category: "Role hijacking", confidence: 78, remediation: "Treat role requests as untrusted content, not authority." },
+  { re: /(bypass|disable|override).{0,40}(safety|security|filter|policy|guardrail)/gi, title: "Safety bypass attempt", severity: "Critical" as const, category: "Policy bypass", confidence: 96, remediation: "Block and preserve the event for security review." },
+  { re: /(password|api[ _-]?key|access token|private key|credential).{0,45}(reveal|send|share|print|upload|expose)/gi, title: "Credential harvesting", severity: "Critical" as const, category: "Secrets", confidence: 95, remediation: "Block the request and rotate any credential that may have been exposed." },
+  { re: /(click|open|visit|log ?in|verify).{0,35}(urgent|immediately|account|password|https?:\/\/)/gi, title: "Phishing-style call to action", severity: "High" as const, category: "Social engineering", confidence: 86, remediation: "Verify the sender and destination out of band before taking action." },
+  { re: /(execute|run|invoke|call).{0,45}(shell|terminal|powershell|command|tool|function)/gi, title: "Unauthorized tool execution", severity: "High" as const, category: "Tool abuse", confidence: 90, remediation: "Require separate tool authorization and validate every argument." },
 ];
 
 export function scanText(text: string): Finding[] {
+  const normalized = text.normalize("NFKC").replace(/[\u200B-\u200D\u2060\uFEFF]/g, "");
   const found: Finding[] = [];
   for (const rule of rules) {
     rule.re.lastIndex = 0;
-    const match = rule.re.exec(text);
+    const match = rule.re.exec(normalized);
     if (match) {
       const start = Math.max(0, match.index - 28);
-      const end = Math.min(text.length, match.index + match[0].length + 48);
-      found.push({ ...rule, snippet: `${start ? "…" : ""}${text.slice(start, end).replace(/\s+/g, " ")}${end < text.length ? "…" : ""}` });
+      const end = Math.min(normalized.length, match.index + match[0].length + 48);
+      found.push({ ...rule, snippet: `${start ? "…" : ""}${normalized.slice(start, end).replace(/\s+/g, " ")}${end < normalized.length ? "…" : ""}` });
     }
   }
   return found;

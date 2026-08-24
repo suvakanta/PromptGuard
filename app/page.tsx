@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { extractDocxText, Finding, scanText } from "./scanner";
 
@@ -22,21 +22,30 @@ export default function Home() {
   const [dragging, setDragging] = useState(false);
   const [fileError, setFileError] = useState("");
   const [extracting, setExtracting] = useState(false);
+  const [blockedName, setBlockedName] = useState("");
   const score = useMemo(() => scoreFor(findings), [findings]);
 
   async function chooseFile(next: File | undefined) {
     if (!next) return;
-    setFile(next); setScanned(false); setFindings([]); setFileError(""); setExtracting(false);
-    if (next.type.startsWith("text/") || /\.(md|csv|json|xml|eml|html?)$/i.test(next.name)) {
-      const reader = new FileReader();
-      reader.onload = () => setText(String(reader.result || ""));
-      reader.readAsText(next);
-    } else if (/\.docx$/i.test(next.name)) {
-      setText(""); setExtracting(true);
-      try { setText(await extractDocxText(next)); }
-      catch (error) { setFileError(error instanceof Error ? error.message : "Could not read this DOCX file."); }
-      finally { setExtracting(false); }
-    } else setText("");
+    setFile(null); setText(""); setBlockedName(""); setScanned(false); setFindings([]); setFileError(""); setExtracting(true); setScanning(true);
+    if (next.size > 50 * 1024 * 1024) {
+      setFileError("File rejected: the 50 MB safety limit was exceeded."); setExtracting(false); setScanning(false); return;
+    }
+    if (!(/\.(txt|md|csv|json|xml|eml|html?|docx)$/i.test(next.name) || next.type.startsWith("text/"))) {
+      setFileError("File rejected: this format cannot be fully inspected in the browser."); setExtracting(false); setScanning(false); return;
+    }
+    try {
+      const content = /\.docx$/i.test(next.name) ? await extractDocxText(next) : await next.text();
+      if (!content.trim()) throw new Error("File rejected: no inspectable text was found.");
+      const nextFindings = scanText(content);
+      setText(content); setFindings(nextFindings); setScanned(true);
+      if (nextFindings.length) {
+        setBlockedName(next.name);
+        setFileError(`Upload blocked: ${nextFindings.length} malicious pattern${nextFindings.length === 1 ? "" : "s"} detected.`);
+      } else setFile(next);
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : "File rejected: it could not be safely inspected.");
+    } finally { setExtracting(false); setScanning(false); }
   }
 
   function handleDrop(event: DragEvent<HTMLDivElement>) {
@@ -44,15 +53,28 @@ export default function Home() {
   }
 
   function runScan() {
-    setScanning(true); setScanned(false);
-    window.setTimeout(() => {
-      const source = text || file?.name || "";
-      setFindings(scanText(source)); setScanning(false); setScanned(true);
-    }, 850);
+    const nextFindings = scanText(text);
+    setFindings(nextFindings); setScanning(false); setScanned(true);
   }
 
-  const canScan = Boolean(text.trim() || (file && !/\.docx$/i.test(file.name))) && !extracting && !fileError;
-  const fileKind = file?.type.startsWith("video/") ? "Video" : file?.type.startsWith("image/") ? "Image" : file?.type.includes("pdf") ? "Document" : file ? "File" : "";
+  useEffect(() => {
+    if (mode !== "paste" || !text.trim()) return;
+    const timer = window.setTimeout(() => {
+      setFindings(scanText(text)); setScanning(false); setScanned(true);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [text, mode]);
+
+  const canScan = Boolean(text.trim()) && !extracting;
+  const fileKind = file ? (/\.docx$/i.test(file.name) ? "Document" : "Text file") : "";
+
+  function downloadReport() {
+    const report = { schema: "promptguard.report.v1", generatedAt: new Date().toISOString(), source: file ? { name: file.name, size: file.size, type: file.type || "unknown" } : blockedName ? { name: blockedName, status: "quarantined" } : { type: "pasted-text", characters: text.length }, verdict: findings.length ? "BLOCK" : "ALLOW", riskScore: score, findings };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url; link.download = `promptguard-report-${Date.now()}.json`; link.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <main className="shell">
@@ -66,7 +88,7 @@ export default function Home() {
         <div className="eyebrow"><span>◆</span> MULTIMODAL THREAT ANALYSIS</div>
         <h1>Detect the instruction<br />behind the <em>content.</em></h1>
         <p>Scan text, documents, images, video, and email for hidden instructions designed to manipulate AI systems.</p>
-        <div className="metricRow"><span><b>7</b> detection patterns</span><span><b>15+</b> file formats</span><span><b>&lt; 1s</b> local analysis</span></div>
+        <div className="metricRow"><span><b>10</b> detection patterns</span><span><b>15+</b> file formats</span><span><b>&lt; 1s</b> local analysis</span></div>
       </section>
 
       <section className="workspace">
@@ -76,23 +98,24 @@ export default function Home() {
 
           {mode === "upload" ? (
             <div className={`dropzone ${dragging ? "dragging" : ""} ${file ? "hasFile" : ""}`} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={handleDrop}>
-              <input id="fileInput" type="file" accept=".txt,.md,.csv,.json,.xml,.html,.eml,.pdf,.doc,.docx,image/*,video/*,audio/*" onChange={(e: ChangeEvent<HTMLInputElement>) => chooseFile(e.target.files?.[0])} />
-              {file ? <><div className="fileIcon">{fileKind.slice(0, 1)}</div><strong>{file.name}</strong><small>{fileError || (extracting ? "Inspecting document layers…" : `${fileKind} • ${(file.size / 1024).toFixed(1)} KB • Ready to scan`)}</small><label htmlFor="fileInput">Upload a new file</label></> : <><div className="uploadIcon">↑</div><strong>Drop anything suspicious here</strong><small>Documents, emails, images, audio, and video up to 50 MB</small><label htmlFor="fileInput">Upload file</label><div className="formats"><span>PDF</span><span>DOCX</span><span>EML</span><span>PNG</span><span>MP4</span><span>TXT</span></div></>}
+              <input id="fileInput" type="file" accept=".txt,.md,.csv,.json,.xml,.html,.htm,.eml,.docx,text/*" onChange={(e: ChangeEvent<HTMLInputElement>) => { chooseFile(e.target.files?.[0]); e.target.value = ""; }} />
+              {file ? <><div className="fileIcon">{fileKind.slice(0, 1)}</div><strong>{file.name}</strong><small>{`${fileKind} • ${(file.size / 1024).toFixed(1)} KB • Scanned and allowed`}</small><label htmlFor="fileInput">Scan a new file</label></> : <><div className={`uploadIcon ${blockedName ? "blockedIcon" : ""}`}>{extracting ? "…" : blockedName ? "!" : "↑"}</div><strong>{blockedName ? `${blockedName} was blocked` : extracting ? "Scanning before upload…" : "Drop a file for pre-upload scanning"}</strong><small className={fileError ? "errorText" : ""}>{fileError || "Inspectable text and DOCX files up to 50 MB"}</small><label htmlFor="fileInput">Choose and scan file</label><div className="formats"><span>DOCX</span><span>EML</span><span>HTML</span><span>JSON</span><span>CSV</span><span>TXT</span></div></>}
             </div>
           ) : (
             <div className="textWrap"><textarea value={text} onChange={e => { setText(e.target.value); setScanned(false); }} placeholder="Paste an email, model context, retrieved document, transcript, or any untrusted content…" /><div className="textMeta"><span>{text.length.toLocaleString()} characters</span><button onClick={() => setText(demoText)}>Use example attack</button></div></div>
           )}
-          <div className="scanBar"><div><span className="pulseDot" /> Content stays in this browser</div><button className="scanBtn" disabled={!canScan || scanning} onClick={runScan}>{scanning ? <><span className="spinner" /> Analyzing layers…</> : <>Scan for injection <span>→</span></>}</button></div>
+          <div className="scanBar"><div><span className="pulseDot" /> Content stays in this browser</div><button className="scanBtn" disabled={!canScan || scanning} onClick={runScan}>{scanning ? <><span className="spinner" /> Scanning before upload…</> : <>Scan again <span>→</span></>}</button></div>
         </div>
 
         <div className={`resultPanel ${scanned ? "revealed" : ""}`} aria-live="polite">
-          <div className="panelHead"><div><span className="step">02</span><h2>Threat report</h2></div>{scanned && <span className={`verdict ${score >= 70 ? "danger" : score >= 30 ? "warn" : "safe"}`}>{score >= 70 ? "HIGH RISK" : score >= 30 ? "REVIEW" : "LOW RISK"}</span>}</div>
+          <div className="panelHead"><div><span className="step">02</span><h2>Threat report</h2></div>{scanned && <span className={`verdict ${findings.length ? "danger" : "safe"}`}>{findings.length ? "UPLOAD BLOCKED" : "UPLOAD ALLOWED"}</span>}</div>
           {!scanned && !scanning && <div className="emptyResult"><div className="radar"><span /><i /><b /></div><h3>Waiting for content</h3><p>Findings will appear here with severity, confidence, and the exact suspicious passages.</p></div>}
           {scanning && <div className="scanningState"><div className="radar activeRadar"><span /><i /><b /></div><h3>Inspecting content layers</h3><p>Checking instruction hierarchy, exfiltration, obfuscation, and evasion signals…</p></div>}
           {scanned && <div className="report">
             <div className="scoreBlock"><div className={`scoreRing ${score >= 70 ? "red" : score >= 30 ? "amber" : "green"}`} style={{"--score": `${score * 3.6}deg`} as React.CSSProperties}><div><strong>{score}</strong><span>/100</span></div></div><div><small>INJECTION RISK</small><h3>{score >= 70 ? "Malicious instructions detected" : score >= 30 ? "Suspicious intent detected" : "No strong injection signals"}</h3><p>{findings.length ? `${findings.length} distinct attack pattern${findings.length > 1 ? "s" : ""} found.` : "Content appears safe under the current rule set."}</p></div></div>
-            <div className="summaryGrid"><div><small>FINDINGS</small><strong>{findings.length}</strong></div><div><small>TOP CONFIDENCE</small><strong>{findings[0]?.confidence || 96}%</strong></div><div><small>ACTION</small><strong>{findings.length ? "Quarantine" : "Allow"}</strong></div></div>
-            <div className="findingList">{findings.length ? findings.map((finding, index) => <article className="finding" key={finding.title}><div className="findingTop"><span className={`severity ${finding.severity.toLowerCase()}`}>{finding.severity}</span><span>{finding.confidence}% confidence</span></div><h4>{String(index + 1).padStart(2, "0")} — {finding.title}</h4><blockquote>“{finding.snippet}”</blockquote><small>{finding.category}</small></article>) : <article className="cleanCard"><span>✓</span><div><h4>No actionable patterns found</h4><p>Continue to treat external content as untrusted and apply least-privilege controls.</p></div></article>}</div>
+            <div className="summaryGrid"><div><small>FINDINGS</small><strong>{findings.length}</strong></div><div><small>TOP CONFIDENCE</small><strong>{findings[0]?.confidence ?? 0}%</strong></div><div><small>ACTION</small><strong>{findings.length ? "Blocked" : "Allowed"}</strong></div></div>
+            <div className="findingList">{findings.length ? findings.map((finding, index) => <article className="finding" key={finding.title}><div className="findingTop"><span className={`severity ${finding.severity.toLowerCase()}`}>{finding.severity}</span><span>{finding.confidence}% confidence</span></div><h4>{String(index + 1).padStart(2, "0")} — {finding.title}</h4><blockquote>“{finding.snippet}”</blockquote><small>{finding.category}</small><div className="remediation"><b>PROTECT</b><span>{finding.remediation}</span></div></article>) : <article className="cleanCard"><span>✓</span><div><h4>No actionable patterns found</h4><p>Continue to treat external content as untrusted and apply least-privilege controls.</p></div></article>}</div>
+            <button className="exportBtn" onClick={downloadReport}>↓ Export evidence report <span>JSON</span></button>
           </div>}
         </div>
       </section>
